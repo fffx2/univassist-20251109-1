@@ -83,18 +83,15 @@ Return ONLY a valid JSON object with this exact structure:
   } catch (error) {
     console.error('OpenAI API Error:', error);
 
-    // Fallback: 기본 폰트 반환
-    const fallbackFonts = {
-      heading: 'Playfair Display',
-      body: 'Inter',
-      korean: 'Noto Sans KR',
-      reasoning: 'AI 서버 연결에 실패하여 기본 폰트를 추천합니다. Playfair Display는 우아한 세리프체이며, Inter는 현대적이고 가독성이 뛰어난 산세리프체입니다.'
-    };
-
+    // 에러 응답 반환 (Fallback 없음)
     return {
-      statusCode: 200,
+      statusCode: 500,
       headers,
-      body: JSON.stringify(fallbackFonts)
+      body: JSON.stringify({
+        error: 'AI 폰트 추천 실패',
+        message: error.message,
+        details: 'OpenAI API 키가 설정되지 않았거나 API 호출에 실패했습니다.'
+      })
     };
   }
 };

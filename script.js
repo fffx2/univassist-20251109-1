@@ -230,7 +230,9 @@ async function generateGuide() {
     btn.innerHTML = '<span class="loading"></span> AI 가이드 생성 중...';
 
     try {
-        // Netlify 함수 호출 시도
+        console.log('🔍 AI 가이드 생성 API 호출...');
+        
+        // Netlify 함수 호출
         const response = await fetch('/.netlify/functions/generate-guide', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -240,46 +242,23 @@ async function generateGuide() {
             })
         });
 
-        if (!response.ok) throw new Error(`API request failed`);
+        if (!response.ok) {
+            const errorText = await response.text();
+            throw new Error(`AI 서버 오류 (${response.status}): ${errorText}`);
+        }
+        
         const data = await response.json();
+        console.log('✅ AI 가이드 생성 성공:', data);
         displayGeneratedGuide(data);
 
     } catch (error) {
-        console.error('Error fetching AI guide:', error);
-        // API 실패 시 로컬 생성
-        const localData = generateLocalReport();
-        displayGeneratedGuide(localData);
-        updateAIMessage("⚠️ AI 서버 연결에 실패하여 기본 가이드를 생성했습니다.");
+        console.error('❌ AI 가이드 생성 실패:', error);
+        alert('AI 서버 연결에 실패했습니다.\n\n에러: ' + error.message + '\n\n해결 방법:\n1. Netlify Functions 배포 확인\n2. OPENAI_API_KEY 환경변수 확인\n3. 브라우저 콘솔(F12)에서 상세 로그 확인');
     } finally {
         btn.disabled = false;
         btn.innerHTML = 'AI 가이드 생성하기';
         btn.classList.add('hidden');
     }
-}
-
-// 로컬 리포트 생성 (백업용)
-function generateLocalReport() {
-    const primary = appState.primaryColor;
-    const secondary = getComplementaryColor(primary);
-
-    return {
-        colorSystem: {
-            primary: { 
-                main: primary, 
-                light: lightenColor(primary, 20), 
-                dark: darkenColor(primary, 20) 
-            },
-            secondary: { 
-                main: secondary, 
-                light: lightenColor(secondary, 20), 
-                dark: darkenColor(secondary, 20) 
-            }
-        },
-        accessibility: {
-            textColorOnPrimary: getContrastingTextColor(primary),
-            contrastRatio: calculateContrast(primary, getContrastingTextColor(primary)).toFixed(2) + ':1'
-        }
-    };
 }
 
 // 생성된 가이드 표시 (Color System만)
@@ -475,22 +454,28 @@ async function generateAIReport() {
     document.getElementById('report-loading').style.display = 'block';
     document.getElementById('report-content').style.display = 'none';
 
-    // AI 처리 시뮬레이션
-    await new Promise(resolve => setTimeout(resolve, 1500));
+    try {
+        // AI 처리 시뮬레이션
+        await new Promise(resolve => setTimeout(resolve, 1500));
 
-    const data = await generateCompleteDesignSystem();
-    reportData = data;
+        const data = await generateCompleteDesignSystem();
+        reportData = data;
 
-    // 각 섹션 렌더링
-    renderFontPairing(data.fonts);
-    renderTypographyReport(data);
-    renderColorSystem(data.colors);
-    renderUniversalColorSystem(data); // NEW: 유니버설 컬러시스템 섹션
-    renderComponents(data);
-    updateCodeOutput(data);
+        // 각 섹션 렌더링
+        renderFontPairing(data.fonts);
+        renderTypographyReport(data);
+        renderColorSystem(data.colors);
+        renderUniversalColorSystem(data);
+        renderComponents(data);
+        updateCodeOutput(data);
 
-    document.getElementById('report-loading').style.display = 'none';
-    document.getElementById('report-content').style.display = 'block';
+        document.getElementById('report-loading').style.display = 'none';
+        document.getElementById('report-content').style.display = 'block';
+    } catch (error) {
+        document.getElementById('report-loading').style.display = 'none';
+        console.error('❌ AI 리포트 생성 실패:', error);
+        alert('AI 서버 연결에 실패했습니다.\n\n에러: ' + error.message + '\n\n해결 방법:\n1. Netlify Functions가 제대로 배포되었는지 확인\n2. OPENAI_API_KEY 환경변수 확인\n3. 브라우저 콘솔(F12)에서 상세 에러 확인');
+    }
 }
 
 // 완전한 디자인 시스템 생성
@@ -498,16 +483,10 @@ async function generateCompleteDesignSystem() {
     const primary = appState.primaryColor || appState.labColors.bgColor;
     const secondary = getComplementaryColor(primary);
 
-    // AI 폰트 추천 시도 (실패 시 로컬 데이터베이스 사용)
-    let fonts;
-    try {
-        console.log('AI 폰트 추천 요청 중...');
-        fonts = await getAIFontRecommendation(appState.service, appState.keyword, appState.platform, appState.mood);
-        console.log('AI 폰트 추천 성공:', fonts);
-    } catch (error) {
-        console.warn('AI 폰트 추천 실패, 로컬 데이터베이스 사용:', error);
-        fonts = getRecommendedFonts(appState.service, appState.keyword, appState.mood);
-    }
+    // AI 폰트 추천 (필수 - 실패 시 에러)
+    console.log('🔍 AI 폰트 추천 요청 시작...');
+    const fonts = await getAIFontRecommendation(appState.service, appState.keyword, appState.platform, appState.mood);
+    console.log('✅ AI 폰트 추천 완료:', fonts);
     
     // Google Fonts 동적 로드
     await loadGoogleFonts([fonts.heading, fonts.body, fonts.korean]);
@@ -530,71 +509,36 @@ async function generateCompleteDesignSystem() {
 
 // AI 폰트 추천 API 호출
 async function getAIFontRecommendation(service, keyword, platform, mood) {
-    const response = await fetch('/.netlify/functions/get-font-recommendation', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-            service: service,
-            keyword: keyword,
-            platform: platform,
-            mood: mood
-        })
-    });
+    console.log('🔍 AI 폰트 추천 API 호출 시작');
+    console.log('요청 데이터:', { service, keyword, platform, mood });
+    
+    try {
+        const response = await fetch('/.netlify/functions/get-font-recommendation', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                service: service,
+                keyword: keyword,
+                platform: platform,
+                mood: mood
+            })
+        });
 
-    if (!response.ok) {
-        throw new Error(`API request failed: ${response.status}`);
-    }
+        console.log('API 응답 상태:', response.status);
 
-    const data = await response.json();
-    return data;
-}
-
-// 폰트 추천 로직 (한글 폰트 포함) - Fallback용
-function getRecommendedFonts(service, keyword, mood) {
-    const fontDatabase = {
-        '포트폴리오': {
-            heading: ['Playfair Display', 'Libre Baskerville', 'Cormorant Garamond'],
-            body: ['Inter', 'Work Sans', 'Lato'],
-            korean: ['Noto Serif KR', 'Nanum Myeongjo', 'Gowun Batang']
-        },
-        '브랜드 홍보': {
-            heading: ['Montserrat', 'Raleway', 'Poppins'],
-            body: ['Open Sans', 'Roboto', 'Nunito'],
-            korean: ['Noto Sans KR', 'Nanum Gothic', 'Spoqa Han Sans Neo']
-        },
-        '제품 판매': {
-            heading: ['Oswald', 'Anton', 'Bebas Neue'],
-            body: ['Roboto', 'Source Sans Pro', 'PT Sans'],
-            korean: ['Black Han Sans', 'Jua', 'Do Hyeon']
-        },
-        '정보 전달': {
-            heading: ['Roboto Slab', 'Merriweather', 'Source Serif Pro'],
-            body: ['Noto Sans', 'IBM Plex Sans', 'Lato'],
-            korean: ['Noto Sans KR', 'Nanum Gothic', 'Malgun Gothic']
-        },
-        '학습': {
-            heading: ['Bitter', 'Arvo', 'Crimson Text'],
-            body: ['Lora', 'Merriweather', 'PT Serif'],
-            korean: ['Nanum Myeongjo', 'Noto Serif KR', 'Gowun Batang']
-        },
-        '엔터테인먼트': {
-            heading: ['Fredoka One', 'Righteous', 'Bungee'],
-            body: ['Quicksand', 'Comfortaa', 'Varela Round'],
-            korean: ['Jua', 'Gamja Flower', 'Hi Melody']
+        if (!response.ok) {
+            const errorText = await response.text();
+            console.error('API 오류 응답:', errorText);
+            throw new Error(`AI 서버 응답 오류 (${response.status}): Netlify Functions가 제대로 배포되지 않았을 수 있습니다.`);
         }
-    };
 
-    const serviceCategory = fontDatabase[service] || fontDatabase['포트폴리오'];
-    const headingFont = serviceCategory.heading[Math.floor(Math.random() * serviceCategory.heading.length)];
-    const bodyFont = serviceCategory.body[Math.floor(Math.random() * serviceCategory.body.length)];
-    const koreanFont = serviceCategory.korean[Math.floor(Math.random() * serviceCategory.korean.length)];
-
-    return {
-        heading: headingFont,
-        body: bodyFont,
-        korean: koreanFont,
-        reasoning: `${service} 서비스에 최적화된 폰트 조합입니다. ${headingFont}은 강렬하고 인상적인 제목을 만들고, ${bodyFont}는 가독성이 뛰어난 본문을 제공합니다. 한글 폰트로는 ${koreanFont}를 추천하며, '${keyword}' 키워드와 잘 어울립니다.`
-    };
+        const data = await response.json();
+        console.log('✅ AI 폰트 추천 성공:', data);
+        return data;
+    } catch (error) {
+        console.error('❌ AI 폰트 추천 실패:', error.message);
+        throw error;
+    }
 }
 
 // Google Fonts 동적 로드
@@ -966,7 +910,7 @@ function checkColorBlindFriendly(color1, color2) {
 }
 
 // ============================================
-// PDF 다운로드 함수 (기존 PNG 대체)
+// PDF 다운로드 함수 (개선된 버전)
 // ============================================
 
 async function downloadReportAsPDF() {
@@ -998,41 +942,93 @@ async function downloadReportAsPDF() {
             return;
         }
 
+        // 렌더링 대기
+        await new Promise(resolve => setTimeout(resolve, 500));
+
+        // html2canvas로 이미지 생성
+        const canvas = await html2canvas(reportContent, {
+            scale: 2,
+            useCORS: true,
+            allowTaint: false,
+            backgroundColor: '#ffffff',
+            logging: false,
+            windowWidth: 1200,
+            width: reportContent.scrollWidth,
+            height: reportContent.scrollHeight
+        });
+
+        // jsPDF 객체 생성
+        const { jsPDF } = window.jspdf;
+        const pdf = new jsPDF({
+            orientation: 'portrait',
+            unit: 'mm',
+            format: 'a4',
+            compress: true
+        });
+
+        // A4 크기 (mm)
+        const pageWidth = 210;
+        const pageHeight = 297;
+        const margin = 5; // 여백 5mm로 최소화
+        
+        // 실제 콘텐츠 영역
+        const contentWidth = pageWidth - (margin * 2);
+        const contentHeight = pageHeight - (margin * 2);
+        
+        // 캔버스를 PDF 페이지 너비에 맞춤
+        const imgWidth = contentWidth;
+        const imgHeight = (canvas.height * contentWidth) / canvas.width;
+        
+        // 페이지별로 분할
+        let yPosition = 0; // 캔버스에서의 Y 위치 (픽셀)
+        let pageNumber = 0;
+
+        while (yPosition < canvas.height) {
+            if (pageNumber > 0) {
+                pdf.addPage();
+            }
+            
+            // 한 페이지에 들어갈 캔버스 픽셀 높이 계산
+            const pixelsPerPage = (canvas.width * contentHeight) / contentWidth;
+            const remainingHeight = canvas.height - yPosition;
+            const heightToCapture = Math.min(pixelsPerPage, remainingHeight);
+            
+            // 새 캔버스 생성하여 해당 부분만 추출
+            const pageCanvas = document.createElement('canvas');
+            pageCanvas.width = canvas.width;
+            pageCanvas.height = heightToCapture;
+            
+            const pageCtx = pageCanvas.getContext('2d');
+            pageCtx.fillStyle = '#ffffff';
+            pageCtx.fillRect(0, 0, pageCanvas.width, pageCanvas.height);
+            
+            // 원본 캔버스에서 해당 부분 복사
+            pageCtx.drawImage(
+                canvas,
+                0, yPosition,                    // 소스 시작점
+                canvas.width, heightToCapture,   // 소스 크기
+                0, 0,                            // 대상 시작점
+                canvas.width, heightToCapture    // 대상 크기
+            );
+            
+            // 이미지로 변환
+            const pageImgData = pageCanvas.toDataURL('image/jpeg', 0.98);
+            
+            // PDF에 추가 (정확한 비율 계산)
+            const pageImgHeight = (heightToCapture * contentWidth) / canvas.width;
+            pdf.addImage(pageImgData, 'JPEG', margin, margin, imgWidth, pageImgHeight);
+            
+            yPosition += heightToCapture;
+            pageNumber++;
+        }
+
+        // 파일명 생성
         const now = new Date();
         const dateStr = now.toISOString().split('T')[0];
         const filename = `UNIVASSIST_Design_Report_${dateStr}.pdf`;
 
-        if (typeof html2pdf === 'undefined') {
-            throw new Error('html2pdf 라이브러리가 로드되지 않았습니다.');
-        }
-
-        const options = {
-            margin: [5, 5, 5, 5],  // 여백 줄임 (10mm → 5mm)
-            filename: filename,
-            image: { 
-                type: 'jpeg', 
-                quality: 0.95  // 품질 약간 낮춤 (파일 크기 감소)
-            },
-            html2canvas: { 
-                scale: 1.5,  // 스케일 낮춤 (2 → 1.5, 빈 공간 감소)
-                useCORS: true,
-                logging: false,
-                letterRendering: true,
-                windowWidth: 1200  // 렌더링 너비 고정
-            },
-            jsPDF: { 
-                unit: 'mm', 
-                format: 'a4', 
-                orientation: 'portrait',
-                compress: true  // PDF 압축 활성화
-            },
-            pagebreak: { 
-                mode: ['avoid-all', 'css'],  // 페이지 나누기 최적화
-                before: '.report-section'  // 섹션 단위로 페이지 나누기
-            }
-        };
-
-        await html2pdf().set(options).from(reportContent).save();
+        // PDF 저장
+        pdf.save(filename);
 
         btn.textContent = '✅ PDF 다운로드 완료!';
         setTimeout(() => {
