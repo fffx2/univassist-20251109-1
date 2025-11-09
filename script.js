@@ -498,8 +498,16 @@ async function generateCompleteDesignSystem() {
     const primary = appState.primaryColor || appState.labColors.bgColor;
     const secondary = getComplementaryColor(primary);
 
-    // 폰트 추천 (한글 폰트 포함)
-    const fonts = getRecommendedFonts(appState.service, appState.keyword, appState.mood);
+    // AI 폰트 추천 시도 (실패 시 로컬 데이터베이스 사용)
+    let fonts;
+    try {
+        console.log('AI 폰트 추천 요청 중...');
+        fonts = await getAIFontRecommendation(appState.service, appState.keyword, appState.platform, appState.mood);
+        console.log('AI 폰트 추천 성공:', fonts);
+    } catch (error) {
+        console.warn('AI 폰트 추천 실패, 로컬 데이터베이스 사용:', error);
+        fonts = getRecommendedFonts(appState.service, appState.keyword, appState.mood);
+    }
     
     // Google Fonts 동적 로드
     await loadGoogleFonts([fonts.heading, fonts.body, fonts.korean]);
@@ -520,7 +528,28 @@ async function generateCompleteDesignSystem() {
     };
 }
 
-// 폰트 추천 로직 (한글 폰트 포함)
+// AI 폰트 추천 API 호출
+async function getAIFontRecommendation(service, keyword, platform, mood) {
+    const response = await fetch('/.netlify/functions/get-font-recommendation', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+            service: service,
+            keyword: keyword,
+            platform: platform,
+            mood: mood
+        })
+    });
+
+    if (!response.ok) {
+        throw new Error(`API request failed: ${response.status}`);
+    }
+
+    const data = await response.json();
+    return data;
+}
+
+// 폰트 추천 로직 (한글 폰트 포함) - Fallback용
 function getRecommendedFonts(service, keyword, mood) {
     const fontDatabase = {
         '포트폴리오': {
@@ -978,25 +1007,28 @@ async function downloadReportAsPDF() {
         }
 
         const options = {
-            margin: [10, 10, 10, 10],
+            margin: [5, 5, 5, 5],  // 여백 줄임 (10mm → 5mm)
             filename: filename,
             image: { 
                 type: 'jpeg', 
-                quality: 0.98 
+                quality: 0.95  // 품질 약간 낮춤 (파일 크기 감소)
             },
             html2canvas: { 
-                scale: 2,
+                scale: 1.5,  // 스케일 낮춤 (2 → 1.5, 빈 공간 감소)
                 useCORS: true,
                 logging: false,
-                letterRendering: true
+                letterRendering: true,
+                windowWidth: 1200  // 렌더링 너비 고정
             },
             jsPDF: { 
                 unit: 'mm', 
                 format: 'a4', 
-                orientation: 'portrait' 
+                orientation: 'portrait',
+                compress: true  // PDF 압축 활성화
             },
             pagebreak: { 
-                mode: ['avoid-all', 'css', 'legacy']
+                mode: ['avoid-all', 'css'],  // 페이지 나누기 최적화
+                before: '.report-section'  // 섹션 단위로 페이지 나누기
             }
         };
 

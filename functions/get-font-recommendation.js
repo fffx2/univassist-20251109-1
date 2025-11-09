@@ -1,13 +1,11 @@
 const OpenAI = require('openai');
 
-// OpenAI API 클라이언트 초기화
 const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY
 });
 
-// Netlify Functions 핸들러
 exports.handler = async (event) => {
-  // CORS 헤더
+  // CORS 헤더 추가
   const headers = {
     'Access-Control-Allow-Origin': '*',
     'Access-Control-Allow-Headers': 'Content-Type',
@@ -17,11 +15,7 @@ exports.handler = async (event) => {
 
   // OPTIONS 요청 처리 (CORS preflight)
   if (event.httpMethod === 'OPTIONS') {
-    return {
-      statusCode: 200,
-      headers,
-      body: ''
-    };
+    return { statusCode: 200, headers, body: '' };
   }
 
   // POST 요청만 허용
@@ -34,68 +28,69 @@ exports.handler = async (event) => {
   }
 
   try {
-    // 요청 본문에서 데이터 추출
     const { service, keyword, platform, mood } = JSON.parse(event.body);
 
     // AI 프롬프트 생성
-    const systemPrompt = `You are an expert typography designer specializing in Google Fonts. Your task is to recommend 3 Google Fonts that work perfectly together for a design system.
+    const systemPrompt = `You are an expert typography designer specializing in Google Fonts.
 
 Context:
 - Service Type: ${service}
-- Mood/Keyword: ${keyword}
+- Keyword/Mood: ${keyword}
 - Platform: ${platform}
-- Design Mood: Soft(${mood.soft}), Static(${mood.static})
+- Mood Values: Soft ${mood.soft}, Static ${mood.static}
 
-Requirements:
-1. Heading Font: Choose a serif or display font from Google Fonts for titles and headings
-2. Body Font: Choose a clean sans-serif font from Google Fonts for body text
-3. Korean Font: Choose a Korean-compatible Google Font (must be actually available on Google Fonts)
+Recommend 3 Google Fonts that work well together:
+1. Heading Font: For titles and headers (serif or display font)
+2. Body Font: For body text (sans-serif, highly readable)
+3. Korean Font: For Korean text (must support Korean characters)
 
-IMPORTANT: Only recommend fonts that are actually available on Google Fonts.
-Korean fonts available on Google Fonts include: Noto Sans KR, Noto Serif KR, Nanum Gothic, Nanum Myeongjo, Jua, Black Han Sans, Do Hyeon, Gamja Flower, Gowun Batang, Stylish, East Sea Dokdo, Hi Melody, Poor Story, Single Day, Sunflower, Yeon Sung, etc.
+IMPORTANT: 
+- Only recommend fonts available on Google Fonts
+- Ensure Korean font actually supports Korean (e.g., Noto Sans KR, Nanum Gothic, Gowun Batang)
+- Provide a reasoning in Korean (한국어)
 
-Return ONLY valid JSON in this exact format:
+Return ONLY a valid JSON object with this exact structure:
 {
   "heading": "Font Name",
   "body": "Font Name",
-  "korean": "Korean Font Name",
-  "reasoning": "2-3 sentences in Korean explaining why these fonts work well together for this specific service type and mood"
+  "korean": "Font Name",
+  "reasoning": "한국어로 설명 (2-3 sentences)"
 }`;
 
     // OpenAI API 호출
     const completion = await openai.chat.completions.create({
-      model: "gpt-4o-mini", // 빠르고 저렴한 모델
+      model: "gpt-4o-mini",
       messages: [
         { role: "system", content: systemPrompt },
-        { role: "user", content: "Recommend the perfect font combination for this project. Return only JSON." }
+        { role: "user", content: "Recommend the fonts in JSON format." }
       ],
       temperature: 0.8,
-      max_tokens: 500,
-      response_format: { type: "json_object" } // JSON 형식 강제
+      max_tokens: 300,
+      response_format: { type: "json_object" }
     });
 
     // AI 응답 파싱
-    const aiResponse = completion.choices[0].message.content;
-    const fontsData = JSON.parse(aiResponse);
+    const result = JSON.parse(completion.choices[0].message.content);
 
-    // 성공 응답 반환
+    console.log('AI Font Recommendation Success:', result);
+
     return {
       statusCode: 200,
       headers,
-      body: JSON.stringify({
-        heading: fontsData.heading,
-        body: fontsData.body,
-        korean: fontsData.korean,
-        reasoning: fontsData.reasoning
-      })
+      body: JSON.stringify(result)
     };
 
   } catch (error) {
     console.error('OpenAI API Error:', error);
 
-    // 에러 발생 시 Fallback 데이터 반환
-    const fallbackFonts = getFallbackFonts(event.body);
-    
+    // Fallback: 기본 폰트 반환
+    const fallbackFonts = {
+      heading: 'Playfair Display',
+      body: 'Inter',
+      korean: 'Noto Sans KR',
+      reasoning: 'AI 서버 연결에 실패하여 기본 폰트를 추천합니다. Playfair Display는 우아한 세리프체이며, Inter는 현대적이고 가독성이 뛰어난 산세리프체입니다.'
+    };
+
     return {
       statusCode: 200,
       headers,
@@ -103,58 +98,3 @@ Return ONLY valid JSON in this exact format:
     };
   }
 };
-
-// Fallback 폰트 추천 (AI 실패 시)
-function getFallbackFonts(requestBody) {
-  try {
-    const { service } = JSON.parse(requestBody);
-    
-    const fallbackDatabase = {
-      '포트폴리오': {
-        heading: 'Playfair Display',
-        body: 'Inter',
-        korean: 'Noto Serif KR',
-        reasoning: '포트폴리오에 최적화된 우아하고 전문적인 조합입니다. Playfair Display는 세련된 느낌을, Inter는 뛰어난 가독성을 제공합니다.'
-      },
-      '브랜드 홍보': {
-        heading: 'Montserrat',
-        body: 'Open Sans',
-        korean: 'Noto Sans KR',
-        reasoning: '브랜드 홍보에 적합한 현대적이고 깔끔한 조합입니다. Montserrat는 강한 인상을, Open Sans는 친근한 느낌을 전달합니다.'
-      },
-      '제품 판매': {
-        heading: 'Oswald',
-        body: 'Roboto',
-        korean: 'Black Han Sans',
-        reasoning: '제품 판매에 효과적인 강렬하고 주목도 높은 조합입니다. Oswald는 임팩트를, Roboto는 신뢰감을 제공합니다.'
-      },
-      '정보 전달': {
-        heading: 'Roboto Slab',
-        body: 'Noto Sans',
-        korean: 'Noto Sans KR',
-        reasoning: '정보 전달에 최적화된 읽기 쉽고 명확한 조합입니다. 두 폰트 모두 뛰어난 가독성으로 장시간 읽기에 적합합니다.'
-      },
-      '학습': {
-        heading: 'Bitter',
-        body: 'Lora',
-        korean: 'Nanum Myeongjo',
-        reasoning: '학습 콘텐츠에 적합한 편안하고 집중하기 좋은 조합입니다. 세리프 폰트들이 신뢰감과 전문성을 전달합니다.'
-      },
-      '엔터테인먼트': {
-        heading: 'Righteous',
-        body: 'Quicksand',
-        korean: 'Jua',
-        reasoning: '엔터테인먼트에 어울리는 재미있고 활기찬 조합입니다. 둥글고 친근한 형태가 즐거운 분위기를 조성합니다.'
-      }
-    };
-
-    return fallbackDatabase[service] || fallbackDatabase['포트폴리오'];
-  } catch (e) {
-    return {
-      heading: 'Inter',
-      body: 'Roboto',
-      korean: 'Noto Sans KR',
-      reasoning: '범용적으로 사용하기 좋은 안정적인 폰트 조합입니다.'
-    };
-  }
-}
